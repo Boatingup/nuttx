@@ -41,12 +41,13 @@
 #include "esp32s3_gpio.h"
 #include "esp32s3_dma.h"
 #include "esp32s3_irq.h"
-#include "esp32s3_periph.h"
 
 #include "xtensa.h"
 #include "hardware/esp32s3_system.h"
 #include "hardware/esp32s3_gpio_sigmap.h"
 #include "hardware/esp32s3_lcd_cam.h"
+
+#include "periph_ctrl.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -135,7 +136,7 @@
                                    ESP32S3_LCD_DATA_WIDTH)
 
 #define ESP32S3_LCD_DMADESC_NUM   (ESP32S3_LCD_FB_SIZE / \
-                                   ESP32S3_DMA_DATALEN_MAX + 1)
+                                   ESP32S3_DMA_BUFLEN_MAX + 1)
 
 #define ESP32S3_LCD_LAYERS        CONFIG_ESP32S3_LCD_BUFFER_LAYERS
 
@@ -666,7 +667,7 @@ static void esp32s3_lcd_dmasetup(void)
                         ESP32S3_LCD_DMADESC_NUM,
                         layer->framebuffer,
                         ESP32S3_LCD_FB_SIZE,
-                        true);
+                        true, priv->dma_channel);
     }
 }
 
@@ -735,7 +736,7 @@ static void esp32s3_lcd_enableclk(void)
   lcdinfo("PCLK=%d/(%d + %d/%d)\n", ESP32S3_LCD_CLK_MHZ,
           ESP32S3_LCD_CLK_N, clk_b, clk_a);
 
-  esp32s3_periph_module_enable(PERIPH_LCD_CAM_MODULE);
+  periph_module_enable(PERIPH_LCD_CAM_MODULE);
 
   regval = (1 << LCD_CAM_LCD_CLKCNT_N_S) |
            LCD_CAM_CLK_EN_M |
@@ -773,8 +774,7 @@ static void esp32s3_lcd_config(void)
   regval |= LCD_CAM_LCD_VSYNC_INT_ENA_M;
   esp32s3_lcd_putreg(LCD_CAM_LC_DMA_INT_ENA_REG, regval);
 
-  /**
-   * Set LCD screem parameters:
+  /* Set LCD screem parameters:
    *    1. RGB mode, ouput VSYNC/HSYNC/DE signal
    *    2. VT height
    *    3. VA height
@@ -805,8 +805,7 @@ static void esp32s3_lcd_config(void)
            LCD_CAM_LCD_VSYNC_IDLE_POL_M;
   esp32s3_lcd_putreg(LCD_CAM_LCD_CTRL2_REG, regval);
 
-  /**
-   * Configure output mode:
+  /* Configure output mode:
    *    1. always output
    *    2. 16-bit word
    *    3. LCD mode

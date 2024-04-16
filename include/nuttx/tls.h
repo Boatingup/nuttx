@@ -27,7 +27,14 @@
 
 #include <nuttx/config.h>
 
-#include <nuttx/arch.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+#include <arch/arch.h>
+#include <arch/types.h>
+
+#include <nuttx/compiler.h>
+#include <nuttx/cache.h>
 #include <nuttx/atexit.h>
 #include <nuttx/fs/fs.h>
 #include <nuttx/list.h>
@@ -48,7 +55,6 @@
 #endif
 
 #ifndef CONFIG_TLS_NELEM
-#  warning CONFIG_TLS_NELEM is not defined
 #  define CONFIG_TLS_NELEM 0
 #endif
 
@@ -116,7 +122,8 @@ struct pthread_atfork_s
 struct task_info_s
 {
   mutex_t         ta_lock;
-  FAR char      **argv;                         /* Name+start-up parameters     */
+  int             ta_argc;                         /* Number of arguments     */
+  FAR char      **ta_argv;                         /* Name+start-up parameters     */
 #if CONFIG_TLS_TASK_NELEM > 0
   uintptr_t       ta_telem[CONFIG_TLS_TASK_NELEM]; /* Task local storage elements */
 #endif
@@ -197,12 +204,19 @@ struct tls_info_s
 #endif
 
 #if defined(CONFIG_PTHREAD_CLEANUP_STACKSIZE) && CONFIG_PTHREAD_CLEANUP_STACKSIZE > 0
-  /* tos   - The index to the next available entry at the top of the stack.
-   * stack - The pre-allocated clean-up stack memory.
+  /* tl_tos   - The index to the next available entry at the top of the
+   *            stack.
+   * tl_stack - The pre-allocated clean-up stack memory.
    */
 
-  uint8_t tos;
-  struct pthread_cleanup_s stack[CONFIG_PTHREAD_CLEANUP_STACKSIZE];
+  uint8_t tl_tos;
+  struct pthread_cleanup_s tl_stack[CONFIG_PTHREAD_CLEANUP_STACKSIZE];
+#endif
+
+  uint8_t tl_cpstate;                  /* Cancellation state */
+
+#ifdef CONFIG_CANCELLATION_POINTS
+  int16_t tl_cpcount;                  /* Nested cancellation point count */
 #endif
 
   int tl_errno;                        /* Per-thread error number */

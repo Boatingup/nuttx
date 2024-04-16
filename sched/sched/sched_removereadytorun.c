@@ -97,7 +97,7 @@ bool nxsched_remove_readytorun(FAR struct tcb_s *rtcb, bool merge)
 
   rtcb->task_state = TSTATE_TASK_INVALID;
 
-  if (g_pendingtasks.head && merge)
+  if (list_pendingtasks()->head && merge)
     {
       doswitch |= nxsched_merge_pending();
     }
@@ -194,22 +194,15 @@ bool nxsched_remove_readytorun(FAR struct tcb_s *rtcb, bool merge)
        * next tcb in the assigned task list (nxttcb) or a TCB in the
        * g_readytorun list.  We can only select a task from that list if
        * the affinity mask includes the current CPU.
-       *
-       * If pre-emption is locked or another CPU is in a critical section,
-       * then use the 'nxttcb' which will probably be the IDLE thread.
-       * REVISIT: What if it is not the IDLE thread?
        */
 
-      if (!nxsched_islocked_global() && !irq_cpu_locked(me))
-        {
-          /* Search for the highest priority task that can run on this
-           * CPU.
-           */
+      /* Search for the highest priority task that can run on this
+       * CPU.
+       */
 
-          for (rtrtcb = (FAR struct tcb_s *)g_readytorun.head;
-               rtrtcb != NULL && !CPU_ISSET(cpu, &rtrtcb->affinity);
-               rtrtcb = rtrtcb->flink);
-        }
+      for (rtrtcb = (FAR struct tcb_s *)list_readytorun()->head;
+           rtrtcb != NULL && !CPU_ISSET(cpu, &rtrtcb->affinity);
+           rtrtcb = rtrtcb->flink);
 
       /* Did we find a task in the g_readytorun list?  Which task should
        * we use?  We decide strictly by the priority of the two tasks:
@@ -225,7 +218,7 @@ bool nxsched_remove_readytorun(FAR struct tcb_s *rtcb, bool merge)
            * list and add to the head of the g_assignedtasks[cpu] list.
            */
 
-          dq_rem((FAR dq_entry_t *)rtrtcb, &g_readytorun);
+          dq_rem((FAR dq_entry_t *)rtrtcb, list_readytorun());
           dq_addfirst((FAR dq_entry_t *)rtrtcb, tasklist);
 
           rtrtcb->cpu = cpu;
@@ -286,7 +279,7 @@ bool nxsched_remove_readytorun(FAR struct tcb_s *rtcb, bool merge)
 
   rtcb->task_state = TSTATE_TASK_INVALID;
 
-  if (g_pendingtasks.head && merge)
+  if (list_pendingtasks()->head && merge)
     {
       doswitch |= nxsched_merge_pending();
     }

@@ -38,12 +38,14 @@ endif
 
 ifeq ($(CONFIG_WINDOWS_NATIVE),y)
   export SHELL=cmd
-else ifeq ($(V),)
+else
   BASHCMD := $(shell command -v bash 2> /dev/null)
   ifneq ($(BASHCMD),)
     export SHELL=$(BASHCMD)
-    export ECHO_BEGIN=@echo -ne "\033[1K\r"
-    export ECHO_END=$(ECHO_BEGIN)
+    ifeq ($(V),)
+      export ECHO_BEGIN=@echo -ne "\033[1K\r"
+      export ECHO_END=$(ECHO_BEGIN)
+    endif
   endif
 endif
 
@@ -576,6 +578,11 @@ ifeq ($(CONFIG_STACK_USAGE),y)
 	EXTRA += *.su
 endif
 
+ifeq ($(CONFIG_ARCH_TOOLCHAIN_TASKING),y)
+	EXTRA += *.d
+	EXTRA += *.src
+endif
+
 ifeq ($(CONFIG_WINDOWS_NATIVE),y)
 define CLEAN
 	$(Q) if exist *$(OBJEXT) (del /f /q *$(OBJEXT))
@@ -657,21 +664,25 @@ else
   endif
 endif
 
+ifeq ($(CONFIG_LIBCXXABI),y)
+ARCHXXINCLUDES += ${INCSYSDIR_PREFIX}$(TOPDIR)$(DELIM)include$(DELIM)libcxxabi
+endif
+
 ifeq ($(CONFIG_LIBM_NEWLIB),y)
-  ARCHINCLUDES += ${INCSYSDIR_PREFIX}$(TOPDIR)$(DELIM)libs$(DELIM)libm$(DELIM)newlib$(DELIM)include
-  ARCHXXINCLUDES += ${INCSYSDIR_PREFIX}$(TOPDIR)$(DELIM)libs$(DELIM)libm$(DELIM)newlib$(DELIM)include
+  ARCHINCLUDES += ${INCSYSDIR_PREFIX}$(TOPDIR)$(DELIM)include$(DELIM)newlib
+  ARCHXXINCLUDES += ${INCSYSDIR_PREFIX}$(TOPDIR)$(DELIM)include$(DELIM)newlib
 endif
 
 #libmcs`s math.h should include after libcxx, or it will override libcxx/include/math.h and build error
 ifeq ($(CONFIG_LIBM_LIBMCS),y)
   ARCHDEFINES += ${DEFINE_PREFIX}LIBMCS_LONG_DOUBLE_IS_64BITS
-  ARCHXXINCLUDES += ${INCSYSDIR_PREFIX}$(TOPDIR)$(DELIM)libs$(DELIM)libm$(DELIM)libmcs$(DELIM)libmcs$(DELIM)libm$(DELIM)include
-  ARCHINCLUDES += ${INCSYSDIR_PREFIX}$(TOPDIR)$(DELIM)libs$(DELIM)libm$(DELIM)libmcs$(DELIM)libmcs$(DELIM)libm$(DELIM)include
+  ARCHINCLUDES += ${INCSYSDIR_PREFIX}$(TOPDIR)$(DELIM)include$(DELIM)libmcs
+  ARCHXXINCLUDES += ${INCSYSDIR_PREFIX}$(TOPDIR)$(DELIM)include$(DELIM)libmcs
 endif
 
 ifeq ($(CONFIG_LIBM_OPENLIBM),y)
-  ARCHINCLUDES += ${INCSYSDIR_PREFIX}$(TOPDIR)$(DELIM)libs$(DELIM)libm$(DELIM)openlibm$(DELIM)openlibm$(DELIM)include
-  ARCHXXINCLUDES += ${INCSYSDIR_PREFIX}$(TOPDIR)$(DELIM)libs$(DELIM)libm$(DELIM)openlibm$(DELIM)openlibm$(DELIM)include
+  ARCHINCLUDES += ${INCSYSDIR_PREFIX}$(TOPDIR)$(DELIM)include$(DELIM)openlibm
+  ARCHXXINCLUDES += ${INCSYSDIR_PREFIX}$(TOPDIR)$(DELIM)include$(DELIM)openlibm
 endif
 
 ARCHXXINCLUDES += ${INCSYSDIR_PREFIX}$(TOPDIR)$(DELIM)include

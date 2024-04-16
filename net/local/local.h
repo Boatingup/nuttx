@@ -80,7 +80,6 @@ enum local_state_s
   /* SOCK_STREAM peers only */
 
   LOCAL_STATE_ACCEPT,          /* Client waiting for a connection */
-  LOCAL_STATE_CONNECTING,      /* Non-blocking connect */
   LOCAL_STATE_CONNECTED,       /* Peer connected */
   LOCAL_STATE_DISCONNECTED     /* Peer disconnected */
 };
@@ -89,7 +88,7 @@ enum local_state_s
  * connection structures:
  *
  * 1. Server.  A SOCK_STREAM that only listens for and accepts
- *    connections from server.
+ *    connections from client.
  * 2. Client.  A SOCK_STREAM peer that connects via the server.
  * 3. Peer. A connected SOCK_STREAM that sends() and recvs() packets.
  *    May either be the client that connect with the server of the
@@ -99,8 +98,7 @@ enum local_state_s
  * And
  *
  * 4. Connectionless.  Like a peer but using a connectionless datagram
- *    style of communication.  SOCK_DRAM support has not yet been
- *    implemented.
+ *    style of communication.
  */
 
 struct devif_callback_s;       /* Forward reference */
@@ -144,8 +142,6 @@ struct local_conn_s
   /* SOCK_STREAM fields common to both client and server */
 
   sem_t lc_waitsem;            /* Use to wait for a connection to be accepted */
-  sem_t lc_donesem;            /* Use to wait for client connected done */
-  FAR struct socket *lc_psock; /* A reference to the socket structure */
 
   /* The following is a list if poll structures of threads waiting for
    * socket events.
@@ -169,13 +165,12 @@ struct local_conn_s
       dq_queue_t lc_waiters;   /* List of connections waiting to be accepted */
     } server;
 
-    /* Fields unique to the connecting client side */
+    /* Fields unique to the connecting accept side */
 
     struct
     {
-      volatile int lc_result;  /* Result of the connection operation (client) */
       dq_entry_t lc_waiter;    /* Linked to the lc_waiters lists */
-    } client;
+    } accept;
   } u;
 #endif /* CONFIG_NET_LOCAL_STREAM */
 };
@@ -213,6 +208,20 @@ struct socket;   /* Forward reference */
  ****************************************************************************/
 
 FAR struct local_conn_s *local_alloc(void);
+
+/****************************************************************************
+ * Name: local_alloc_accept
+ *
+ * Description:
+ *    Called when a client calls connect and can find the appropriate
+ *    connection in LISTEN. In that case, this function will create
+ *    a new connection and initialize it.
+ *
+ ****************************************************************************/
+
+int local_alloc_accept(FAR struct local_conn_s *server,
+                       FAR struct local_conn_s *client,
+                       FAR struct local_conn_s **accept);
 
 /****************************************************************************
  * Name: local_free
@@ -698,6 +707,16 @@ int32_t local_generate_instance_id(void);
 int local_set_pollthreshold(FAR struct local_conn_s *conn,
                             unsigned long threshold);
 #endif
+
+/****************************************************************************
+ * Name: local_set_nonblocking
+ *
+ * Description:
+ *   Set the local conntion to nonblocking mode
+ *
+ ****************************************************************************/
+
+int local_set_nonblocking(FAR struct local_conn_s *conn);
 
 #undef EXTERN
 #ifdef __cplusplus

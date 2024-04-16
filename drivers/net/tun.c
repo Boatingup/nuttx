@@ -246,11 +246,6 @@ static void tun_pollnotify(FAR struct tun_device_s *priv,
       nxsem_post(&priv->write_wait_sem);
     }
 
-  if (fds == NULL)
-    {
-      return;
-    }
-
   poll_notify(&fds, 1, eventset);
 }
 
@@ -995,6 +990,7 @@ static ssize_t tun_write(FAR struct file *filep, FAR const char *buffer,
       if (priv->write_d_len == 0)
         {
           net_lock();
+          netdev_iob_release(&priv->dev);
           ret = netdev_iob_prepare(&priv->dev, false, 0);
           priv->dev.d_buf = NULL;
           if (ret < 0)
@@ -1186,7 +1182,7 @@ static int tun_poll(FAR struct file *filep,
           eventset |= POLLIN;
         }
 
-      tun_pollnotify(priv, eventset);
+      poll_notify(&fds, 1, eventset);
     }
   else
     {

@@ -41,9 +41,8 @@ extern "C"
 #define EXTERN extern
 #endif
 
-#if defined(CONFIG_RW_SPINLOCK) && !defined(__cplusplus)
-#  include <stdatomic.h>
-typedef atomic_int rwlock_t;
+#if defined(CONFIG_RW_SPINLOCK)
+typedef int rwlock_t;
 #  define RW_SP_UNLOCKED      0
 #  define RW_SP_READ_LOCKED   1
 #  define RW_SP_WRITE_LOCKED -1
@@ -54,18 +53,16 @@ typedef atomic_int rwlock_t;
 #  define SP_LOCKED   1  /* The Locked state */
 
 typedef uint8_t spinlock_t;
-#else
-
-#ifdef CONFIG_TICKET_SPINLOCK
+#elif defined(CONFIG_TICKET_SPINLOCK)
 
 union spinlock_u
 {
   struct
   {
-    uint16_t owner;
-    uint16_t next;
+    unsigned short owner;
+    unsigned short next;
   } tickets;
-  uint32_t value;
+  unsigned int value;
 };
 typedef union spinlock_u spinlock_t;
 
@@ -86,7 +83,7 @@ typedef union spinlock_u spinlock_t;
 
 #include <arch/spinlock.h>
 
-#endif
+#endif /* CONFIG_SPINLOCK */
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -148,7 +145,7 @@ typedef union spinlock_u spinlock_t;
 
 #if defined(CONFIG_ARCH_HAVE_TESTSET)
 spinlock_t up_testset(FAR volatile spinlock_t *lock);
-#elif !defined(CONFIG_SMP)
+#else
 static inline spinlock_t up_testset(FAR volatile spinlock_t *lock)
 {
   irqstate_t flags;
@@ -364,7 +361,7 @@ void spin_unlock_wo_note(FAR volatile spinlock_t *lock);
  *
  ****************************************************************************/
 
-#ifdef CONFIG_SMP
+#ifdef CONFIG_SPINLOCK
 void spin_setbit(FAR volatile cpu_set_t *set, unsigned int cpu,
                  FAR volatile spinlock_t *setlock,
                  FAR volatile spinlock_t *orlock);
@@ -387,13 +384,11 @@ void spin_setbit(FAR volatile cpu_set_t *set, unsigned int cpu,
  *
  ****************************************************************************/
 
-#ifdef CONFIG_SMP
+#ifdef CONFIG_SPINLOCK
 void spin_clrbit(FAR volatile cpu_set_t *set, unsigned int cpu,
                  FAR volatile spinlock_t *setlock,
                  FAR volatile spinlock_t *orlock);
 #endif
-
-#endif /* CONFIG_SPINLOCK */
 
 /****************************************************************************
  * Name: spin_initialize
@@ -448,7 +443,7 @@ void spin_clrbit(FAR volatile cpu_set_t *set, unsigned int cpu,
  *
  ****************************************************************************/
 
-#if defined(CONFIG_SMP)
+#if defined(CONFIG_SPINLOCK)
 irqstate_t spin_lock_irqsave(FAR spinlock_t *lock);
 #else
 #  define spin_lock_irqsave(l) ((void)(l), up_irq_save())
@@ -458,7 +453,7 @@ irqstate_t spin_lock_irqsave(FAR spinlock_t *lock);
  * Name: spin_lock_irqsave_wo_note
  ****************************************************************************/
 
-#if defined(CONFIG_SMP)
+#if defined(CONFIG_SPINLOCK)
 irqstate_t spin_lock_irqsave_wo_note(FAR spinlock_t *lock);
 #else
 #  define spin_lock_irqsave_wo_note(l) ((void)(l), up_irq_save())
@@ -493,7 +488,7 @@ irqstate_t spin_lock_irqsave_wo_note(FAR spinlock_t *lock);
  *
  ****************************************************************************/
 
-#if defined(CONFIG_SMP)
+#if defined(CONFIG_SPINLOCK)
 void spin_unlock_irqrestore(FAR spinlock_t *lock, irqstate_t flags);
 #else
 #  define spin_unlock_irqrestore(l, f) up_irq_restore(f)
@@ -503,13 +498,13 @@ void spin_unlock_irqrestore(FAR spinlock_t *lock, irqstate_t flags);
  * Name: spin_unlock_irqrestore_wo_note
  ****************************************************************************/
 
-#if defined(CONFIG_SMP)
+#if defined(CONFIG_SPINLOCK)
 void spin_unlock_irqrestore_wo_note(FAR spinlock_t *lock, irqstate_t flags);
 #else
 #  define spin_unlock_irqrestore_wo_note(l, f) up_irq_restore(f)
 #endif
 
-#if defined(CONFIG_RW_SPINLOCK) && !defined(__cplusplus)
+#if defined(CONFIG_RW_SPINLOCK)
 
 /****************************************************************************
  * Name: rwlock_init
@@ -704,7 +699,7 @@ void write_unlock(FAR volatile rwlock_t *lock);
  *
  ****************************************************************************/
 
-#if defined(CONFIG_SMP)
+#if defined(CONFIG_SPINLOCK)
 irqstate_t read_lock_irqsave(FAR rwlock_t *lock);
 #else
 #  define read_lock_irqsave(l) ((void)(l), up_irq_save())
@@ -737,7 +732,7 @@ irqstate_t read_lock_irqsave(FAR rwlock_t *lock);
  *
  ****************************************************************************/
 
-#if defined(CONFIG_SMP)
+#if defined(CONFIG_SPINLOCK)
 void read_unlock_irqrestore(FAR rwlock_t *lock, irqstate_t flags);
 #else
 #  define read_unlock_irqrestore(l, f) up_irq_restore(f)
@@ -776,7 +771,7 @@ void read_unlock_irqrestore(FAR rwlock_t *lock, irqstate_t flags);
  *
  ****************************************************************************/
 
-#if defined(CONFIG_SMP)
+#if defined(CONFIG_SPINLOCK)
 irqstate_t write_lock_irqsave(FAR rwlock_t *lock);
 #else
 #  define write_lock_irqsave(l) ((void)(l), up_irq_save())
@@ -811,13 +806,13 @@ irqstate_t write_lock_irqsave(FAR rwlock_t *lock);
  *
  ****************************************************************************/
 
-#if defined(CONFIG_SMP)
+#if defined(CONFIG_SPINLOCK)
 void write_unlock_irqrestore(FAR rwlock_t *lock, irqstate_t flags);
 #else
 #  define write_unlock_irqrestore(l, f) up_irq_restore(f)
 #endif
 
-#endif /* CONFIG_RW_SPINLOCK && !__cplusplus */
+#endif /* CONFIG_RW_SPINLOCK */
 
 #undef EXTERN
 #if defined(__cplusplus)

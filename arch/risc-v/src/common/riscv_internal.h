@@ -133,16 +133,16 @@
 
 #define READ_CSR(reg) \
   ({ \
-     uintptr_t reg##_val; \
-     __asm__ __volatile__("csrr %0, " __STR(reg) : "=r"(reg##_val)); \
-     reg##_val; \
+     uintptr_t regval; \
+     __asm__ __volatile__("csrr %0, " __STR(reg) : "=r"(regval)); \
+     regval; \
   })
 
 #define READ_AND_SET_CSR(reg, bits) \
   ({ \
-     uintptr_t reg##_val; \
-     __asm__ __volatile__("csrrs %0, " __STR(reg) ", %1": "=r"(reg##_val) : "rK"(bits)); \
-     reg##_val; \
+     uintptr_t regval; \
+     __asm__ __volatile__("csrrs %0, " __STR(reg) ", %1": "=r"(regval) : "rK"(bits)); \
+     regval; \
   })
 
 #define WRITE_CSR(reg, val) \
@@ -159,6 +159,9 @@
   ({ \
      __asm__ __volatile__("csrc " __STR(reg) ", %0" :: "rK"(bits)); \
   })
+
+#define riscv_append_pmp_region(a, b, s) \
+  riscv_config_pmp_region(riscv_next_free_pmp_region(), a, b, s)
 
 #endif
 
@@ -312,6 +315,7 @@ void riscv_netinitialize(void);
 
 uintptr_t *riscv_doirq(int irq, uintptr_t *regs);
 int riscv_exception(int mcause, void *regs, void *args);
+int riscv_fillpage(int mcause, void *regs, void *args);
 int riscv_misaligned(int irq, void *context, void *arg);
 
 /* Debug ********************************************************************/

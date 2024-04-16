@@ -120,9 +120,6 @@ static void exec_swap(FAR struct tcb_s *ptcb, FAR struct tcb_s *chtcb)
   int        chndx;
   pid_t      pid;
   irqstate_t flags;
-#ifdef HAVE_GROUP_MEMBERS
-  FAR pid_t  *tg_members;
-#endif
 #ifdef CONFIG_SCHED_HAVE_PARENT
 #  ifdef CONFIG_SCHED_CHILD_STATUS
   FAR struct child_status_s *tg_children;
@@ -139,13 +136,13 @@ static void exec_swap(FAR struct tcb_s *ptcb, FAR struct tcb_s *chtcb)
   pndx  = PIDHASH(ptcb->pid);
   chndx = PIDHASH(chtcb->pid);
 
-  DEBUGASSERT(g_pidhash[pndx]);
-  DEBUGASSERT(g_pidhash[chndx]);
+  DEBUGASSERT(nxsched_pidhash()[pndx]);
+  DEBUGASSERT(nxsched_pidhash()[chndx]);
 
-  /* Exchange g_pidhash index */
+  /* Exchange nxsched_pidhash() index */
 
-  g_pidhash[pndx] = chtcb;
-  g_pidhash[chndx] = ptcb;
+  nxsched_pidhash()[pndx] = chtcb;
+  nxsched_pidhash()[chndx] = ptcb;
 
   /* Exchange pid */
 
@@ -162,12 +159,6 @@ static void exec_swap(FAR struct tcb_s *ptcb, FAR struct tcb_s *chtcb)
   pid = chtcb->group->tg_ppid;
   chtcb->group->tg_ppid = ptcb->group->tg_ppid;
   ptcb->group->tg_ppid = pid;
-
-#ifdef HAVE_GROUP_MEMBERS
-  tg_members = chtcb->group->tg_members;
-  chtcb->group->tg_members = ptcb->group->tg_members;
-  ptcb->group->tg_members = tg_members;
-#endif
 
 #ifdef CONFIG_SCHED_HAVE_PARENT
 #  ifdef CONFIG_SCHED_CHILD_STATUS
@@ -256,6 +247,12 @@ int exec_module(FAR struct binary_s *binp,
       goto errout_with_args;
     }
 
+  ret = binfmt_copyactions(&actions, actions);
+  if (ret < 0)
+    {
+      goto errout_with_envp;
+    }
+
 #if defined(CONFIG_ARCH_ADDRENV) && defined(CONFIG_BUILD_KERNEL)
   /* If there is no argument vector, the process name must be copied here */
 
@@ -271,7 +268,7 @@ int exec_module(FAR struct binary_s *binp,
   if (ret < 0)
     {
       berr("ERROR: addrenv_select() failed: %d\n", ret);
-      goto errout_with_envp;
+      goto errout_with_actions;
     }
 
   ret = up_addrenv_vheap(addrenv, &vheap);
@@ -297,9 +294,11 @@ int exec_module(FAR struct binary_s *binp,
     }
 #endif
 
-  /* Note that tcb->flags are not modified.  0=normal task */
+  /* Note that tcb->cmn.flags are not modified.  0=normal task */
 
-  /* tcb->flags |= TCB_FLAG_TTYPE_TASK; */
+  /* tcb->cmn.flags |= TCB_FLAG_TTYPE_TASK; */
+
+  tcb->cmn.flags |= TCB_FLAG_FREE_TCB;
 
   /* Initialize the task */
 
@@ -310,12 +309,14 @@ int exec_module(FAR struct binary_s *binp,
   if (argv && argv[0])
     {
       ret = nxtask_init(tcb, argv[0], binp->priority, stackaddr,
-                        binp->stacksize, binp->entrypt, &argv[1], envp);
+                        binp->stacksize, binp->entrypt, &argv[1],
+                        envp, actions);
     }
   else
     {
       ret = nxtask_init(tcb, filename, binp->priority, stackaddr,
-                        binp->stacksize, binp->entrypt, argv, envp);
+                        binp->stacksize, binp->entrypt, argv,
+                        envp, actions);
     }
 
   if (ret < 0)
@@ -326,6 +327,7 @@ int exec_module(FAR struct binary_s *binp,
 
   /* The copied argv and envp can now be released */
 
+  binfmt_freeactions(actions);
   binfmt_freeargv(argv);
   binfmt_freeenv(envp);
 
@@ -376,10 +378,6 @@ int exec_module(FAR struct binary_s *binp,
     }
 #endif
 
-  /* Close the file descriptors with O_CLOEXEC before active task */
-
-  files_close_onexec(&tcb->cmn);
-
   if (!spawn)
     {
       exec_swap(this_task(), (FAR struct tcb_s *)tcb);
@@ -399,17 +397,6 @@ int exec_module(FAR struct binary_s *binp,
       goto errout_with_tcbinit;
     }
 #endif
-
-  /* Perform file actions */
-
-  if (actions != NULL)
-    {
-      ret = spawn_file_actions(&tcb->cmn, actions);
-      if (ret < 0)
-        {
-          goto errout_with_tcbinit;
-        }
-    }
 
   /* Set the attributes */
 
@@ -442,8 +429,10 @@ errout_with_tcbinit:
 errout_with_addrenv:
 #if defined(CONFIG_ARCH_ADDRENV) && defined(CONFIG_BUILD_KERNEL)
   addrenv_restore(binp->oldenv);
-errout_with_envp:
+errout_with_actions:
+  binfmt_freeactions(actions);
 #endif
+errout_with_envp:
   binfmt_freeenv(envp);
 errout_with_args:
   binfmt_freeargv(argv);

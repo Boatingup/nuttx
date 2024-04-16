@@ -90,6 +90,13 @@
  * Pre-processor definitions
  ****************************************************************************/
 
+#define DEBUGPOINT_NONE          0x00
+#define DEBUGPOINT_WATCHPOINT_RO 0x01
+#define DEBUGPOINT_WATCHPOINT_WO 0x02
+#define DEBUGPOINT_WATCHPOINT_RW 0x03
+#define DEBUGPOINT_BREAKPOINT    0x04
+#define DEBUGPOINT_STEPPOINT     0x05
+
 /****************************************************************************
  * Public Types
  ****************************************************************************/
@@ -97,6 +104,8 @@
 typedef CODE void (*sig_deliver_t)(FAR struct tcb_s *tcb);
 typedef CODE void (*phy_enable_t)(bool enable);
 typedef CODE void (*initializer_t)(void);
+typedef CODE void (*debug_callback_t)(int type, FAR void *addr, size_t size,
+                                      FAR void *arg);
 
 /****************************************************************************
  * Public Data
@@ -1369,12 +1378,51 @@ uintptr_t up_addrenv_page_vaddr(uintptr_t page);
  *   vaddr - The virtual address.
  *
  * Returned Value:
- *   True if it is; false if it's not
+ *   True if it is; false if it's not.
  *
  ****************************************************************************/
 
 #ifdef CONFIG_ARCH_ADDRENV
 bool up_addrenv_user_vaddr(uintptr_t vaddr);
+#endif
+
+/****************************************************************************
+ * Name: up_addrenv_page_wipe
+ *
+ * Description:
+ *   Wipe a page of physical memory, first mapping it into kernel virtual
+ *   memory.
+ *
+ * Input Parameters:
+ *   page - The page physical address.
+ *
+ * Returned Value:
+ *   None.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_ARCH_ADDRENV
+void up_addrenv_page_wipe(uintptr_t page);
+#endif
+
+/****************************************************************************
+ * Name: up_addrenv_kmap_init
+ *
+ * Description:
+ *   Initialize the architecture specific part of the kernel mapping
+ *   interface.
+ *
+ * Input Parameters:
+ *   None.
+ *
+ * Returned Value:
+ *   Zero (OK) is returned on success; a negated errno value is returned
+ *   on failure.
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_ARCH_ADDRENV) && defined(CONFIG_MM_KMAP)
+int up_addrenv_kmap_init(void);
 #endif
 
 /****************************************************************************
@@ -1611,7 +1659,7 @@ int up_prioritize_irq(int irq, int priority);
  *
  ****************************************************************************/
 
-#ifdef CONFIG_ARCH_HAVE_TRUSTZONE
+#if defined(CONFIG_ARCH_TRUSTZONE_SECURE) || defined(CONFIG_ARCH_HIPRI_INTERRUPT)
 void up_secure_irq(int irq, bool secure);
 #else
 # define up_secure_irq(i, s)
@@ -1637,40 +1685,30 @@ void up_send_smp_call(cpu_set_t cpuset);
  *
  ****************************************************************************/
 
-#ifdef CONFIG_ARCH_HAVE_TRUSTZONE
+#if defined(CONFIG_ARCH_TRUSTZONE_SECURE) || defined(CONFIG_ARCH_HIPRI_INTERRUPT)
 void up_secure_irq_all(bool secure);
 #else
 # define up_secure_irq_all(s)
 #endif
 
 /****************************************************************************
- * Function:  up_adj_timer_period
+ * Function:  up_adjtime
  *
  * Description:
  *   Adjusts timer period. This call is used when adjusting timer period as
  *   defined in adjtime() function.
  *
  * Input Parameters:
- *   period_inc_usec  - period adjustment in usec (reset to default value
- *                      if 0)
+ *   ppb - Adjustment in parts per billion (nanoseconds per second).
+ *         Zero is default rate, positive value makes clock run faster
+ *         and negative value slower.
  *
+ * Assumptions:
+ *   Called from within critical section or interrupt context.
  ****************************************************************************/
 
-#ifdef CONFIG_CLOCK_ADJTIME
-void up_adj_timer_period(long long period_inc_usec);
-
-/****************************************************************************
- * Function:  up_get_timer_period
- *
- * Description:
- *   This function returns the timer period in usec.
- *
- * Input Parameters:
- *   period_usec  - returned timer period in usec
- *
- ****************************************************************************/
-
-void up_get_timer_period(long long *period_usec);
+#ifdef CONFIG_ARCH_HAVE_ADJTIME
+void up_adjtime(long ppb);
 #endif
 
 /****************************************************************************
@@ -2219,6 +2257,29 @@ bool up_cpu_pausereq(int cpu);
 #endif
 
 /****************************************************************************
+ * Name: up_cpu_paused_save
+ *
+ * Description:
+ *   Handle a pause request from another CPU.  Normally, this logic is
+ *   executed from interrupt handling logic within the architecture-specific
+ *   However, it is sometimes necessary to perform the pending
+ *   pause operation in other contexts where the interrupt cannot be taken
+ *   in order to avoid deadlocks.
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   On success, OK is returned.  Otherwise, a negated errno value indicating
+ *   the nature of the failure is returned.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_SMP
+int up_cpu_paused_save(void);
+#endif
+
+/****************************************************************************
  * Name: up_cpu_paused
  *
  * Description:
@@ -2247,6 +2308,26 @@ bool up_cpu_pausereq(int cpu);
 
 #ifdef CONFIG_SMP
 int up_cpu_paused(int cpu);
+#endif
+
+/****************************************************************************
+ * Name: up_cpu_paused_restore
+ *
+ * Description:
+ *  Restore the state of the CPU after it was paused via up_cpu_pause(),
+ *  and resume normal tasking.
+ *
+ * Input Parameters:
+ *  None
+ *
+ * Returned Value:
+ *   On success, OK is returned.  Otherwise, a negated errno value indicating
+ *   the nature of the failure is returned.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_SMP
+int up_cpu_paused_restore(void);
 #endif
 
 /****************************************************************************
@@ -2455,12 +2536,12 @@ void irq_dispatch(int irq, FAR void *context);
 struct tcb_s;
 size_t up_check_tcbstack(FAR struct tcb_s *tcb);
 #if defined(CONFIG_ARCH_INTERRUPTSTACK) && CONFIG_ARCH_INTERRUPTSTACK > 3
-size_t up_check_intstack(void);
+size_t up_check_intstack(int cpu);
 #endif
 #endif
 
 #if defined(CONFIG_ARCH_INTERRUPTSTACK) && CONFIG_ARCH_INTERRUPTSTACK > 3
-uintptr_t up_get_intstackbase(void);
+uintptr_t up_get_intstackbase(int cpu);
 #endif
 
 /****************************************************************************
@@ -2604,6 +2685,29 @@ int up_rtc_getdatetime_with_subseconds(FAR struct tm *tp, FAR long *nsec);
 
 #ifdef CONFIG_RTC
 int up_rtc_settime(FAR const struct timespec *tp);
+#endif
+
+/****************************************************************************
+ * Name: up_rtc_adjtime
+ *
+ * Description:
+ *   Adjust RTC frequency (running rate). Used by adjtime() when RTC is used
+ *   as system time source.
+ *
+ * Input Parameters:
+ *   ppb - Adjustment in parts per billion (nanoseconds per second).
+ *         Zero is default rate, positive value makes clock run faster
+ *         and negative value slower.
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ * Assumptions:
+ *   Called from within a critical section.
+ ****************************************************************************/
+
+#if defined(CONFIG_RTC_HIRES) && defined(CONFIG_RTC_ADJTIME)
+int up_rtc_adjtime(long ppb);
 #endif
 
 /****************************************************************************
@@ -2794,6 +2898,60 @@ int up_saveusercontext(FAR void *saveregs);
 bool up_fpucmp(FAR const void *saveregs1, FAR const void *saveregs2);
 #else
 #define up_fpucmp(r1, r2) (true)
+#endif
+
+#ifdef CONFIG_ARCH_HAVE_DEBUG
+
+/****************************************************************************
+ * Name: up_debugpoint
+ *
+ * Description:
+ *   Add a debugpoint.
+ *
+ * Input Parameters:
+ *   type     - The debugpoint type. optional value:
+ *              DEBUGPOINT_WATCHPOINT_RO - Read only watchpoint.
+ *              DEBUGPOINT_WATCHPOINT_WO - Write only watchpoint.
+ *              DEBUGPOINT_WATCHPOINT_RW - Read and write watchpoint.
+ *              DEBUGPOINT_BREAKPOINT    - Breakpoint.
+ *              DEBUGPOINT_STEPPOINT     - Single step.
+ *   addr     - The address to be debugged.
+ *   size     - The watchpoint size. only for watchpoint.
+ *   callback - The callback function when debugpoint triggered.
+ *              if NULL, the debugpoint will be removed.
+ *   arg      - The argument of callback function.
+ *
+ * Returned Value:
+ *  Zero on success; a negated errno value on failure
+ *
+ ****************************************************************************/
+
+int up_debugpoint_add(int type, FAR void *addr, size_t size,
+                      debug_callback_t callback, FAR void *arg);
+
+/****************************************************************************
+ * Name: up_debugpoint_remove
+ *
+ * Description:
+ *   Remove a debugpoint.
+ *
+ * Input Parameters:
+ *   type     - The debugpoint type. optional value:
+ *              DEBUGPOINT_WATCHPOINT_RO - Read only watchpoint.
+ *              DEBUGPOINT_WATCHPOINT_WO - Write only watchpoint.
+ *              DEBUGPOINT_WATCHPOINT_RW - Read and write watchpoint.
+ *              DEBUGPOINT_BREAKPOINT    - Breakpoint.
+ *              DEBUGPOINT_STEPPOINT     - Single step.
+ *   addr     - The address to be debugged.
+ *   size     - The watchpoint size. only for watchpoint.
+ *
+ * Returned Value:
+ *  Zero on success; a negated errno value on failure
+ *
+ ****************************************************************************/
+
+int up_debugpoint_remove(int type, FAR void *addr, size_t size);
+
 #endif
 
 #undef EXTERN

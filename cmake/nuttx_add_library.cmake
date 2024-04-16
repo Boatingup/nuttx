@@ -26,6 +26,13 @@ function(nuttx_add_library_internal target)
   # ensure nuttx_context is created before this
   add_dependencies(${target} nuttx_context)
 
+  # add specified search directories for CXX targets
+  target_include_directories(
+    ${target}
+    PRIVATE
+      $<$<COMPILE_LANGUAGE:CXX>:$<GENEX_EVAL:$<TARGET_PROPERTY:nuttx,NUTTX_CXX_INCLUDE_DIRECTORIES>>>
+  )
+
   # add main include directories
   target_include_directories(
     ${target} SYSTEM
@@ -171,7 +178,7 @@ define_property(
 function(nuttx_add_library target)
   add_library(${target} ${ARGN})
 
-  set_property(GLOBAL APPEND PROPERTY NUTTX_EXTRA_LIBRARIES ${target})
+  set_property(GLOBAL APPEND PROPERTY NUTTX_SYSTEM_LIBRARIES ${target})
 
   get_target_property(target_type ${target} TYPE)
   if(${target_type} STREQUAL "STATIC_LIBRARY")
@@ -181,10 +188,41 @@ function(nuttx_add_library target)
   nuttx_add_library_internal(${target})
 endfunction()
 
+# =============================================================================
+#
+# nuttx_add_extra_library
+#
+# Add extra library to extra attribute
+#
+function(nuttx_add_extra_library)
+  foreach(target ${ARGN})
+    set_property(GLOBAL APPEND PROPERTY NUTTX_EXTRA_LIBRARIES ${target})
+  endforeach()
+endfunction()
+
 # Import static library
 #
 function(nuttx_library_import library_name library_path)
   add_library(${library_name} STATIC IMPORTED GLOBAL)
   set_target_properties(${library_name} PROPERTIES IMPORTED_LOCATION
                                                    ${library_path})
+endfunction()
+
+# nuttx_add_external_library
+#
+# the target library of add_library has been called in external CMakeLists.txt
+# so that they can be added to the final link
+#
+# Usually used with Nuttx to include an external system that already supports
+# CMake compilation
+function(nuttx_add_external_library target)
+  cmake_parse_arguments(ARGS "" MODE "" ${ARGN})
+  if(NOT ARGS_MODE)
+    set_property(GLOBAL APPEND PROPERTY NUTTX_SYSTEM_LIBRARIES ${target})
+  elseif("${ARGS_MODE}" STREQUAL "APPS")
+    set_property(GLOBAL APPEND PROPERTY NUTTX_APPS_LIBRARIES ${target})
+  elseif("${ARGS_MODE}" STREQUAL "KERNEL")
+    set_property(GLOBAL APPEND PROPERTY NUTTX_KERNEL_LIBRARIES ${target})
+  endif()
+  nuttx_add_library_internal(${target})
 endfunction()

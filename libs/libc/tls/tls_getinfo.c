@@ -28,6 +28,7 @@
 #include <assert.h>
 
 #include <nuttx/tls.h>
+#include <nuttx/sched.h>
 
 #if !defined(up_tls_info) && (defined(__KERNEL__) || !defined(CONFIG_TLS_ALIGNED))
 
@@ -44,7 +45,7 @@
  *   where CONFIG_TLS_ALIGNED is *not* defined or __KERNEL__ is defined.
  *
  * Input Parameters:
- *   None
+ *   None.
  *
  * Returned Value:
  *   A reference to the thread-specific tls_info_s structure is return on

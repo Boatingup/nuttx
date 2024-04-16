@@ -44,6 +44,19 @@ SECTIONS
 {
   . = 0x80000000;
 
+  /* where the global variable out-of-bounds detection information located */
+#ifdef CONFIG_MM_KASAN_GLOBAL
+  .kasan.unused :
+  {
+    *(.data..LASANLOC*)
+  }
+  .kasan.global :
+  {
+    KEEP (*(.data..LASAN0))
+    KEEP (*(.data.rel.local..LASAN0))
+  }
+#endif
+
   .text :
     {
       _stext = . ;
@@ -63,6 +76,14 @@ SECTIONS
       *(.init)             /* Old ABI */
       *(.fini)             /* Old ABI */
       _etext = . ;
+    }
+
+  .init_section :
+    {
+      _sinit = ABSOLUTE(.);
+      KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*)))
+      KEEP(*(.init_array .ctors))
+      _einit = ABSOLUTE(.);
     }
 
   .rodata :

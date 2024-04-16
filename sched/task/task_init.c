@@ -86,7 +86,8 @@
 int nxtask_init(FAR struct task_tcb_s *tcb, const char *name, int priority,
                 FAR void *stack, uint32_t stack_size,
                 main_t entry, FAR char * const argv[],
-                FAR char * const envp[])
+                FAR char * const envp[],
+                FAR const posix_spawn_file_actions_t *actions)
 {
   uint8_t ttype = tcb->cmn.flags & TCB_FLAG_TTYPE_MASK;
   int ret;
@@ -110,12 +111,18 @@ int nxtask_init(FAR struct task_tcb_s *tcb, const char *name, int priority,
 
   /* Create a new task group */
 
-  ret = group_allocate(tcb, tcb->cmn.flags);
+  ret = group_initialize(tcb, tcb->cmn.flags);
   if (ret < 0)
     {
       sched_trace_end();
       return ret;
     }
+
+#ifndef CONFIG_DISABLE_PTHREAD
+  /* Initialize the task join */
+
+  nxtask_joininit(&tcb->cmn);
+#endif
 
   /* Duplicate the parent tasks environment */
 
@@ -127,7 +134,7 @@ int nxtask_init(FAR struct task_tcb_s *tcb, const char *name, int priority,
 
   /* Associate file descriptors with the new task */
 
-  ret = group_setuptaskfiles(tcb);
+  ret = group_setuptaskfiles(tcb, actions, true);
   if (ret < 0)
     {
       goto errout_with_group;
@@ -178,7 +185,7 @@ int nxtask_init(FAR struct task_tcb_s *tcb, const char *name, int priority,
 
   /* Now we have enough in place that we can join the group */
 
-  group_initialize(tcb);
+  group_postinitialize(tcb);
   sched_trace_end();
   return ret;
 
@@ -202,6 +209,8 @@ errout_with_group:
           up_release_stack(&tcb->cmn, ttype);
         }
     }
+
+  nxtask_joindestroy(&tcb->cmn);
 
   group_leave(&tcb->cmn);
 
@@ -234,7 +243,7 @@ void nxtask_uninit(FAR struct task_tcb_s *tcb)
    * nxtask_setup_scheduler().
    */
 
-  dq_rem((FAR dq_entry_t *)tcb, &g_inactivetasks);
+  dq_rem((FAR dq_entry_t *)tcb, list_inactivetasks());
 
   /* Release all resources associated with the TCB... Including the TCB
    * itself.

@@ -102,6 +102,7 @@ const struct procfs_operations arm64_fpu_procfs_operations =
   arm64_fpu_procfs_close, /* close */
   arm64_fpu_procfs_read,  /* read */
   NULL,                   /* write */
+  NULL,                   /* poll */
   NULL,                   /* dup */
   NULL,                   /* opendir */
   NULL,                   /* closedir */
@@ -429,8 +430,10 @@ void arm64_fpu_disable(void)
 
 bool up_fpucmp(const void *saveregs1, const void *saveregs2)
 {
-  const uint64_t *regs1 = saveregs1 + XCPTCONTEXT_GP_SIZE;
-  const uint64_t *regs2 = saveregs2 + XCPTCONTEXT_GP_SIZE;
+  const uint64_t *regs1 = (uint64_t *)((uintptr_t)saveregs1 +
+                                       XCPTCONTEXT_GP_SIZE);
+  const uint64_t *regs2 = (uint64_t *)((uintptr_t)saveregs2 +
+                                       XCPTCONTEXT_GP_SIZE);
 
   /* Only compare callee-saved registers, caller-saved registers do not
    * need to be preserved.

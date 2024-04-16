@@ -97,22 +97,12 @@ static int group_cancel_children_handler(pid_t pid, FAR void *arg)
 
   if (pid != (pid_t)((uintptr_t)arg))
     {
-      /* Cancel this thread.  This is a forced cancellation.  Make sure that
-       * cancellation is not disabled by the task/thread.  That bit will
-       * prevent pthread_cancel() or nxtask_delete() from doing what they
-       * need to do.
-       */
-
       rtcb = nxsched_get_tcb(pid);
       if (rtcb != NULL)
         {
-          /* This is a forced cancellation.  Make sure that cancellation is
-           * not disabled by the task/thread.  That bit would prevent
-           * pthread_cancel() or task_delete() from doing what they need
-           * to do.
-           */
+          /* Cancel this thread.  This is a forced cancellation. */
 
-          rtcb->flags &= ~TCB_FLAG_NONCANCELABLE;
+          rtcb->flags |= TCB_FLAG_FORCED_CANCEL;
 
           /* 'pid' could refer to the main task of the thread.  That pid
            * will appear in the group member list as well!
@@ -191,29 +181,34 @@ int group_kill_children(FAR struct tcb_s *tcb)
 
 #if defined(CONFIG_GROUP_KILL_CHILDREN_TIMEOUT_MS) && \
             CONFIG_GROUP_KILL_CHILDREN_TIMEOUT_MS != 0
-  /* Send SIGTERM for each first */
 
-  group_foreachchild(tcb->group, group_kill_children_handler,
-                     (FAR void *)((uintptr_t)tcb->pid));
-
-  /* Wait a bit for child exit */
-
-  ret = CONFIG_GROUP_KILL_CHILDREN_TIMEOUT_MS;
-  while (1)
+  if ((tcb->flags & TCB_FLAG_FORCED_CANCEL) == 0)
     {
-      if (tcb->group->tg_nmembers <= 1)
-        {
-          break;
-        }
+      /* Send SIGTERM for each first */
 
-      nxsig_usleep(USEC_PER_MSEC);
+      group_foreachchild(tcb->group, group_kill_children_handler,
+                         (FAR void *)((uintptr_t)tcb->pid));
+
+      /* Wait a bit for child exit */
+
+      ret = CONFIG_GROUP_KILL_CHILDREN_TIMEOUT_MS;
+      while (1)
+        {
+          if (sq_empty(&tcb->group->tg_members) ||
+              sq_is_singular(&tcb->group->tg_members))
+            {
+              break;
+            }
+
+          nxsig_usleep(USEC_PER_MSEC);
 
 #  if CONFIG_GROUP_KILL_CHILDREN_TIMEOUT_MS > 0
-      if (--ret < 0)
-        {
-          break;
-        }
+          if (--ret < 0)
+            {
+              break;
+            }
 #  endif
+        }
     }
 #endif
 

@@ -133,6 +133,8 @@ static FAR struct virtio_gpu_priv_s *g_virtio_gpu[VIRTIO_GPU_MAX_DISP];
 
 /****************************************************************************
  * Name: virtio_gpu_send_cmd
+ * Note: the caller should not touch `buf` after calling this, as it will be
+ *       freed either here or in virtio_gpu_done().
  ****************************************************************************/
 
 static int virtio_gpu_send_cmd(FAR struct virtqueue *vq,
@@ -146,6 +148,7 @@ static int virtio_gpu_send_cmd(FAR struct virtqueue *vq,
       sem_t sem;
       struct virtio_gpu_cookie_s cookie;
 
+      virtio_free_buf(vq->vq_dev, buf);
       nxsem_init(&sem, 0, 0);
       cookie.blocking = true;
       cookie.p = &sem;
@@ -180,9 +183,13 @@ static int virtio_gpu_send_cmd(FAR struct virtqueue *vq,
             }
           else
             {
-              virtio_free_buf(vq->vq_dev, buf);
               kmm_free(cookie);
             }
+        }
+
+      if (buf && ret < 0)
+        {
+          virtio_free_buf(vq->vq_dev, buf);
         }
     }
 
@@ -570,7 +577,7 @@ static int virtio_gpu_probe(FAR struct virtio_device *vdev)
   g_virtio_gpu[disp] = priv;
   priv->display = disp;
 
-  ret = fb_register(disp, 0);
+  ret = virtio_gpu_fb_register(disp);
   if (ret < 0)
     {
       vrterr("ERROR: Failed to initialize framebuffer driver, ret=%d",
@@ -690,53 +697,41 @@ int virtio_register_gpu_driver(void)
 }
 
 /****************************************************************************
- * Name: up_fbinitialize
+ * Name: virtio_gpu_fb_register
  *
  * Description:
  *   Initialize the framebuffer video hardware associated with the display.
  *
  * Input Parameters:
- *   display - In the case of hardware with multiple displays, this
- *     specifies the display.  Normally this is zero.
+ *   display - The display number for the case of boards supporting multiple
+ *             displays or for hardware that supports multiple
+ *             layers (each layer is consider a display).  Typically zero.
  *
  * Returned Value:
- *   Zero is returned on success; a negated errno value is returned on any
+ *   Zero (OK) is returned success; a negated errno value is returned on any
  *   failure.
  *
  ****************************************************************************/
 
-int up_fbinitialize(int display)
+int virtio_gpu_fb_register(int display)
 {
-  return display < VIRTIO_GPU_MAX_DISP ? OK : -EINVAL;
-}
+  FAR struct fb_vtable_s *vtable;
 
-/****************************************************************************
- * Name: up_fbgetvplane
- *
- * Description:
- *   Return a reference to the framebuffer object for the specified video
- *   plane of the specified plane.
- *   Many OSDs support multiple planes of video.
- *
- * Input Parameters:
- *   display - In the case of hardware with multiple displays, this
- *     specifies the display. Normally this is zero.
- *   vplane - Identifies the plane being queried.
- *
- * Returned Value:
- *   A non-NULL pointer to the frame buffer access structure is returned on
- *   success; NULL is returned on any failure.
- *
- ****************************************************************************/
-
-FAR struct fb_vtable_s *up_fbgetvplane(int display, int vplane)
-{
   if (display < 0 || display >= VIRTIO_GPU_MAX_DISP ||
-      vplane < 0 || vplane >= VIRTIO_GPU_MAX_PLANE || !g_virtio_gpu[display])
+     !g_virtio_gpu[display])
     {
-      vrterr("get vplane (%d,%d) failed", display, vplane);
-      return NULL;
+      vrterr("ERROR: display number %d is out of range [%d, %d]",
+             display, 0, VIRTIO_GPU_MAX_DISP - 1);
+      return -EINVAL;
     }
 
-  return &g_virtio_gpu[display]->vtable;
+  vtable =  &g_virtio_gpu[display]->vtable;
+
+  if (vtable == NULL)
+    {
+      vrterr("ERROR: get vtable failed\n");
+      return -EINVAL;
+    }
+
+  return fb_register_device(display, 0, vtable);
 }

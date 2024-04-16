@@ -101,6 +101,7 @@ const struct procfs_operations g_cpuload_operations =
   cpuload_close,      /* close */
   cpuload_read,       /* read */
   NULL,               /* write */
+  NULL,               /* poll */
 
   cpuload_dup,        /* dup */
 
@@ -202,8 +203,8 @@ static ssize_t cpuload_read(FAR struct file *filep, FAR char *buffer,
 
   if (filep->f_pos == 0)
     {
-      uint32_t total = 0;
-      uint32_t active = 0;
+      clock_t total = 0;
+      clock_t active = 0;
       uint32_t intpart;
       uint32_t fracpart;
 

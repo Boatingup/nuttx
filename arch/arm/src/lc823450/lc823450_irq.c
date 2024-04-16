@@ -172,8 +172,7 @@ static void lc823450_dumpnvic(const char *msg, int irq)
 
 /****************************************************************************
  * Name: lc823450_nmi,
- *       lc823450_pendsv, lc823450_dbgmonitor, lc823450_pendsv,
- *       lc823450_reserved
+ *       lc823450_pendsv, lc823450_pendsv, lc823450_reserved
  *
  * Description:
  *   Handlers for various exceptions.  None are handled and all are fatal
@@ -195,14 +194,6 @@ static int lc823450_pendsv(int irq, void *context, void *arg)
 {
   enter_critical_section();
   irqinfo("PANIC!!! PendSV received\n");
-  PANIC();
-  return 0;
-}
-
-static int lc823450_dbgmonitor(int irq, void *context, void *arg)
-{
-  enter_critical_section();
-  irqinfo("PANIC!!! Debug Monitor received\n");
   PANIC();
   return 0;
 }
@@ -517,7 +508,8 @@ void up_irqinitialize(void)
   irq_attach(LC823450_IRQ_BUSFAULT, arm_busfault, NULL);
   irq_attach(LC823450_IRQ_USAGEFAULT, arm_usagefault, NULL);
   irq_attach(LC823450_IRQ_PENDSV, lc823450_pendsv, NULL);
-  irq_attach(LC823450_IRQ_DBGMONITOR, lc823450_dbgmonitor, NULL);
+  arm_enable_dbgmonitor();
+  irq_attach(LC823450_IRQ_DBGMONITOR, arm_dbgmonitor, NULL);
   irq_attach(LC823450_IRQ_RESERVED, lc823450_reserved, NULL);
 #endif
 
@@ -828,23 +820,7 @@ int lc823450_irq_register(int irq, struct lc823450_irq_ops *ops)
 #endif /* CONFIG_LC823450_VIRQ */
 
 /****************************************************************************
- * Name: arm_intstack_top
- *
- * Description:
- *   Return a pointer to the top the correct interrupt stack allocation
- *   for the current CPU.
- *
- ****************************************************************************/
-
-#if defined(CONFIG_SMP) && CONFIG_ARCH_INTERRUPTSTACK > 7
-uintptr_t arm_intstack_top(void)
-{
-  return g_cpu_intstack_top[up_cpu_index()];
-}
-#endif
-
-/****************************************************************************
- * Name: arm_intstack_alloc
+ * Name: up_get_intstackbase
  *
  * Description:
  *   Return a pointer to the "alloc" the correct interrupt stack allocation
@@ -853,8 +829,8 @@ uintptr_t arm_intstack_top(void)
  ****************************************************************************/
 
 #if defined(CONFIG_SMP) && CONFIG_ARCH_INTERRUPTSTACK > 7
-uintptr_t arm_intstack_alloc(void)
+uintptr_t up_get_intstackbase(int cpu)
 {
-  return g_cpu_intstack_top[up_cpu_index()] - INTSTACK_SIZE;
+  return g_cpu_intstack_top[cpu] - INTSTACK_SIZE;
 }
 #endif

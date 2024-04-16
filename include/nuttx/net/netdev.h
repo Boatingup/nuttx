@@ -320,6 +320,9 @@ struct net_driver_s
   in_addr_t      d_ipaddr;      /* Host IPv4 address assigned to the network interface */
   in_addr_t      d_draddr;      /* Default router IP address */
   in_addr_t      d_netmask;     /* Network subnet mask */
+#ifdef CONFIG_NET_ARP_ACD
+  struct arp_acd_s d_acd;       /* ipv4 acd entry */
+#endif /* CONFIG_NET_ARP_ACD */
 #endif
 
 #ifdef CONFIG_NET_IPv6
@@ -440,6 +443,18 @@ struct net_driver_s
    */
 
   struct netdev_statistics_s d_statistics;
+#endif
+
+#if defined(CONFIG_NET_TIMESTAMP)
+  /* Reception timestamp of packet being currently processed.
+   * If CONFIG_ARCH_HAVE_NETDEV_TIMESTAMP is true, the timestamp is provided
+   * by hardware driver. Otherwise it is filled in by kernel when packet
+   * enters ipv4_input or ipv6_input.
+   *
+   * The timestamp is in CLOCK_REALTIME.
+   */
+
+  struct timespec d_rxtime;
 #endif
 
   /* Application callbacks:
@@ -724,8 +739,8 @@ int netdev_ifdown(FAR struct net_driver_s *dev);
  *
  ****************************************************************************/
 
-int netdev_carrier_on(FAR struct net_driver_s *dev);
-int netdev_carrier_off(FAR struct net_driver_s *dev);
+void netdev_carrier_on(FAR struct net_driver_s *dev);
+void netdev_carrier_off(FAR struct net_driver_s *dev);
 
 /****************************************************************************
  * Name: chksum
@@ -1024,6 +1039,20 @@ void netdev_iob_clear(FAR struct net_driver_s *dev);
 void netdev_iob_release(FAR struct net_driver_s *dev);
 
 /****************************************************************************
+ * Name: netdev_iob_clone
+ *
+ * Description:
+ *   Backup the current iob buffer for a given NIC by cloning it.
+ *
+ * Assumptions:
+ *   The caller has locked the network.
+ *
+ ****************************************************************************/
+
+FAR struct iob_s *netdev_iob_clone(FAR struct net_driver_s *dev,
+                                   bool throttled);
+
+/****************************************************************************
  * Name: netdev_ipv6_add/del
  *
  * Description:
@@ -1050,11 +1079,19 @@ int netdev_ipv6_del(FAR struct net_driver_s *dev, const net_ipv6addr_t addr,
  * Name: netdev_ipv6_srcaddr/srcifaddr
  *
  * Description:
- *   Get the source IPv6 address (RFC6724).
+ *   Get the source IPv6 address (RFC6724) to use for transmitted packets.
+ *   If we are responding to a received packet, use the destination address
+ *   from that packet. If we are initiating communication, pick a local
+ *   address that best matches the destination address.
+ *
+ * Input parameters:
+ *   dev - Network device that packet is being transmitted from
+ *   dst - Address to compare against when choosing local address.
  *
  * Returned Value:
- *   A pointer to the IPv6 address is returned on success.  It will never be
- *   NULL, but can be an address containing g_ipv6_unspecaddr.
+ *   A pointer to a net_ipv6addr_t contained in net_driver_s is returned on
+ *   success.  It will never be NULL, but can be an address containing
+ *   g_ipv6_unspecaddr.
  *
  * Assumptions:
  *   The caller has locked the network.

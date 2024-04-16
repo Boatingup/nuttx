@@ -39,6 +39,8 @@
 #include <nuttx/semaphore.h>
 #include <nuttx/spinlock.h>
 #include <nuttx/mm/map.h>
+#include <nuttx/spawn.h>
+#include <nuttx/queue.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -318,7 +320,8 @@ struct mountpt_operations
   CODE int     (*mmap)(FAR struct file *filep,
                        FAR struct mm_map_entry_s *map);
   CODE int     (*truncate)(FAR struct file *filep, off_t length);
-
+  CODE int     (*poll)(FAR struct file *filep, FAR struct pollfd *fds,
+                       bool setup);
   /* The two structures need not be common after this point. The following
    * are extended methods needed to deal with the unique needs of mounted
    * file systems.
@@ -410,7 +413,7 @@ struct inode
   uint16_t          i_flags;    /* Flags for inode */
   union inode_ops_u u;          /* Inode operations */
   ino_t             i_ino;      /* Inode serial number */
-#ifdef CONFIG_PSEUDOFS_FILE
+#if defined(CONFIG_PSEUDOFS_FILE) || defined(CONFIG_FS_SHMFS)
   size_t            i_size;     /* The size of per inode driver */
 #endif
 #ifdef CONFIG_PSEUDOFS_ATTRIBUTES
@@ -466,7 +469,11 @@ struct file
   FAR struct inode *f_inode;    /* Driver or file system interface */
   FAR void         *f_priv;     /* Per file driver private data */
 #ifdef CONFIG_FDSAN
-  uint64_t          f_tag;      /* file owner tag, init to 0 */
+  uint64_t          f_tag_fdsan; /* File owner fdsan tag, init to 0 */
+#endif
+
+#ifdef CONFIG_FDCHECK
+  uint8_t           f_tag_fdcheck; /* File owner fdcheck tag, init to 0 */
 #endif
 };
 
@@ -482,6 +489,15 @@ struct filelist
   spinlock_t        fl_lock;    /* Manage access to the file list */
   uint8_t           fl_rows;    /* The number of rows of fl_files array */
   FAR struct file **fl_files;   /* The pointer of two layer file descriptors array */
+
+  /* Pre-allocated files to avoid allocator access during thread creation
+   * phase, For functional safety requirements, increase
+   * CONFIG_NFILE_DESCRIPTORS_PER_BLOCK could also avoid allocator access
+   * caused by the file descriptor exceeding the limit.
+   */
+
+  FAR struct file  *fl_prefile;
+  FAR struct file   fl_prefiles[CONFIG_NFILE_DESCRIPTORS_PER_BLOCK];
 };
 
 /* The following structure defines the list of files used for standard C I/O.
@@ -523,7 +539,7 @@ struct filelist
 #ifdef CONFIG_FILE_STREAM
 struct file_struct
 {
-  FAR struct file_struct *fs_next;      /* Pointer to next file stream */
+  sq_entry_t              fs_entry;     /* Entry of file stream */
   rmutex_t                fs_lock;      /* Recursive lock */
   cookie_io_functions_t   fs_iofunc;    /* Callbacks to user / system functions */
   FAR void               *fs_cookie;    /* Pointer to file descriptor / cookie struct */
@@ -548,8 +564,7 @@ struct streamlist
 {
   mutex_t                 sl_lock;   /* For thread safety */
   struct file_struct      sl_std[3];
-  FAR struct file_struct *sl_head;
-  FAR struct file_struct *sl_tail;
+  sq_queue_t              sl_queue;
 };
 #endif /* CONFIG_FILE_STREAM */
 
@@ -877,17 +892,26 @@ int files_countlist(FAR struct filelist *list);
  *
  ****************************************************************************/
 
-int files_duplist(FAR struct filelist *plist, FAR struct filelist *clist);
+int files_duplist(FAR struct filelist *plist, FAR struct filelist *clist,
+                  FAR const posix_spawn_file_actions_t *actions,
+                  bool cloexec);
 
 /****************************************************************************
- * Name: files_close_onexec
+ * Name: files_fget
  *
  * Description:
- *   Close specified task's file descriptors with O_CLOEXEC before exec.
+ *   Get the instance of struct file from file list by file descriptor.
+ *
+ * Input Parameters:
+ *   list - The list of files for a task.
+ *   fd   - A valid descriptor between 0 and files_countlist(list).
+ *
+ * Returned Value:
+ *   Pointer to file structure of list[fd].
  *
  ****************************************************************************/
 
-void files_close_onexec(FAR struct tcb_s *tcb);
+FAR struct file *files_fget(FAR struct filelist *list, int fd);
 
 /****************************************************************************
  * Name: file_allocate_from_tcb
@@ -1118,6 +1142,25 @@ int fs_getfilep(int fd, FAR struct file **filep);
 int file_close(FAR struct file *filep);
 
 /****************************************************************************
+ * Name: file_close_without_clear
+ *
+ * Description:
+ *   Close a file that was previously opened with file_open(), but without
+ *   clear filep.
+ *
+ * Input Parameters:
+ *   filep - A pointer to a user provided memory location containing the
+ *           open file data returned by file_open().
+ *
+ * Returned Value:
+ *   Zero (OK) is returned on success; A negated errno value is returned on
+ *   any failure to indicate the nature of the failure.
+ *
+ ****************************************************************************/
+
+int file_close_without_clear(FAR struct file *filep);
+
+/****************************************************************************
  * Name: nx_close_from_tcb
  *
  * Description:
@@ -1205,6 +1248,31 @@ int open_blockdriver(FAR const char *pathname, int mountflags,
  ****************************************************************************/
 
 int close_blockdriver(FAR struct inode *inode);
+
+/****************************************************************************
+ * Name: find_blockdriver
+ *
+ * Description:
+ *   Return the inode of the block driver specified by 'pathname'
+ *
+ * Input Parameters:
+ *   pathname   - The full path to the block driver to be located
+ *   mountflags - If MS_RDONLY is not set, then driver must support write
+ *                operations (see include/sys/mount.h)
+ *   ppinode    - Address of the location to return the inode reference
+ *
+ * Returned Value:
+ *   Returns zero on success or a negated errno on failure:
+ *
+ *   ENOENT  - No block driver of this name is registered
+ *   ENOTBLK - The inode associated with the pathname is not a block driver
+ *   EACCESS - The MS_RDONLY option was not set but this driver does not
+ *             support write access
+ *
+ ****************************************************************************/
+
+int find_blockdriver(FAR const char *pathname, int mountflags,
+                     FAR struct inode **ppinode);
 
 /****************************************************************************
  * Name: find_mtddriver

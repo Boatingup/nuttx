@@ -32,7 +32,7 @@ Status/Open Issues
   via the EDBG VCOM and LED and buttons support.  SDRAM and the HSMCI
   SD card slot also appear to be fully functional.
 
-See also boards/arm/samv7/samv71-xult/README.txt
+See also Documentation/platforms/arm/samv7/boards/samv71-xult/README.txt
 
 Serial Console
 ==============
@@ -1322,7 +1322,7 @@ Configuration sub-directories
 
   can
 
-    An nsh configuration (see below) with added support fo MCAN driver.
+    An nsh configuration (see below) with added support for MCAN driver.
     The purpose of the configuration is mainly to track whether changes
     to SAMv7 MCAN driver do not cause build errors and warnings.
 

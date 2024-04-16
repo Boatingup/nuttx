@@ -147,7 +147,7 @@ static inline void nxtask_sigchild(pid_t ppid, FAR struct tcb_s *ctcb,
    * this case, the child task group has been orphaned.
    */
 
-  pgrp = group_findbypid(ppid);
+  pgrp = task_getgroup(ppid);
   if (!pgrp)
     {
       /* Set the task group ID to an invalid group ID.  The dead parent
@@ -174,7 +174,7 @@ static inline void nxtask_sigchild(pid_t ppid, FAR struct tcb_s *ctcb,
    * should generate SIGCHLD.
    */
 
-  if (chgrp->tg_nmembers == 1)
+  if (sq_is_singular(&chgrp->tg_members))
     {
       /* Mark that all of the threads in the task group have exited */
 
@@ -360,7 +360,9 @@ static inline void nxtask_exitwakeup(FAR struct tcb_s *tcb, int status)
 
       /* Is this the last thread in the group? */
 
-      if (group->tg_nmembers == 1)
+#ifndef CONFIG_DISABLE_PTHREAD
+      if (sq_is_singular(&group->tg_members))
+#endif
         {
           /* Yes.. Wakeup any tasks waiting for this task to exit */
 
@@ -429,17 +431,6 @@ void nxtask_exithook(FAR struct tcb_s *tcb, int status)
     {
       return;
     }
-
-#ifdef CONFIG_CANCELLATION_POINTS
-  /* Mark the task as non-cancelable to avoid additional calls to exit()
-   * due to any cancellation point logic that might get kicked off by
-   * actions taken during exit processing.
-   */
-
-  tcb->flags  |= TCB_FLAG_NONCANCELABLE;
-  tcb->flags  &= ~TCB_FLAG_CANCEL_PENDING;
-  tcb->cpcount = 0;
-#endif
 
   /* If the task was terminated by another task, it may be in an unknown
    * state.  Make some feeble effort to recover the state.

@@ -349,11 +349,6 @@ void arm_pminitialize(void);
 
 /* Interrupt handling *******************************************************/
 
-#if defined(CONFIG_SMP) && CONFIG_ARCH_INTERRUPTSTACK > 7
-uintptr_t arm_intstack_alloc(void);
-uintptr_t arm_intstack_top(void);
-#endif
-
 #if CONFIG_ARCH_INTERRUPTSTACK > 7
 void weak_function arm_initialize_stack(void);
 #endif
@@ -384,6 +379,8 @@ EXTERN const void * const _vectors[];
 
 int  arm_svcall(int irq, void *context, void *arg);
 int  arm_hardfault(int irq, void *context, void *arg);
+int  arm_enable_dbgmonitor(void);
+int  arm_dbgmonitor(int irq, void *context, void *arg);
 
 #  if defined(CONFIG_ARCH_ARMV7M) || defined(CONFIG_ARCH_ARMV8M)
 
@@ -400,14 +397,20 @@ int  arm_securefault(int irq, void *context, void *arg);
 
 #elif defined(CONFIG_ARCH_ARMV7A) || defined(CONFIG_ARCH_ARMV7R) || defined(CONFIG_ARCH_ARMV8R)
 
+/* Interrupt acknowledge and dispatch */
+
+#ifdef CONFIG_ARCH_HIPRI_INTERRUPT
+uint32_t *arm_dofiq(int fiq, uint32_t *regs);
+#endif
+
 /* Paging support */
 
-#ifdef CONFIG_PAGING
+#ifdef CONFIG_LEGACY_PAGING
 void arm_pginitialize(void);
 uint32_t *arm_va2pte(uintptr_t vaddr);
-#else /* CONFIG_PAGING */
+#else /* CONFIG_LEGACY_PAGING */
 #  define arm_pginitialize()
-#endif /* CONFIG_PAGING */
+#endif /* CONFIG_LEGACY_PAGING */
 
 /* Exception Handlers */
 
@@ -422,14 +425,14 @@ uint32_t *arm_undefinedinsn(uint32_t *regs);
 
 /* Paging support (and exception handlers) */
 
-#ifdef CONFIG_PAGING
+#ifdef CONFIG_LEGACY_PAGING
 void arm_pginitialize(void);
 uint32_t *arm_va2pte(uintptr_t vaddr);
 void arm_dataabort(uint32_t *regs, uint32_t far, uint32_t fsr);
-#else /* CONFIG_PAGING */
+#else /* CONFIG_LEGACY_PAGING */
 #  define arm_pginitialize()
 void arm_dataabort(uint32_t *regs);
-#endif /* CONFIG_PAGING */
+#endif /* CONFIG_LEGACY_PAGING */
 
 /* Exception handlers */
 
@@ -529,6 +532,10 @@ void arm_stack_color(void *stackbase, size_t nbytes);
 int arm_gen_nonsecurefault(int irq, uint32_t *regs);
 #else
 # define arm_gen_nonsecurefault(i, r)  (0)
+#endif
+
+#if defined(CONFIG_ARMV7M_STACKCHECK) || defined(CONFIG_ARMV8M_STACKCHECK)
+void arm_stack_check_init(void) noinstrument_function;
 #endif
 
 #undef EXTERN
